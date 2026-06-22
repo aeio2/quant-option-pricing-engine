@@ -209,7 +209,7 @@ with tab2:
         st.subheader("Asset & Strike")
         s0_std = st.slider("S₀ (Spot Price)",    min_value=10.0,  max_value=500.0, value=100.0, step=1.0,  key="std_s0")
         K_std  = st.slider("K (Strike Price)",    min_value=10.0,  max_value=500.0, value=100.0, step=1.0,  key="std_k")
-        T_std     = st.slider("T (Years)",           min_value=0.1,  max_value=10.0,  value=1.0,  step=0.1, key="std_T")
+        T_std  = st.slider("T (Years)",           min_value=0.1,  max_value=10.0,  value=1.0,  step=0.1, key="std_T")
     with col2:
         st.subheader("Rates & Volatility")
         r_std  = st.slider("r – Risk-free (%)",   min_value=0.0,   max_value=20.0,  value=5.0,   step=0.25, key="std_r") / 100
@@ -235,7 +235,7 @@ with tab2:
 
             # 1. BSM (Euro Only)
             if is_euro:
-                ans_dict["BSM (Analytic)"] = black_scholes_price(s0_std, K_std, T_std, r_std, q_std, sigma_std, option_type_std)
+                ans_dict["BSM (Analytic)"] = f"{black_scholes_price(s0_std, K_std, T_std, r_std, q_std, sigma_std, option_type_std):.4f}"
             else:
                 ans_dict["BSM (Analytic)"] = "N/A (European Only)"
 
@@ -249,9 +249,14 @@ with tab2:
                     payoffs = payoff_func(S_T_arr, K_std, option_type_std)
                     mcs_results.append(np.mean(np.exp(-r_std * T_std) * payoffs))
                 
-                ans_dict["Monte Carlo (Mean)"] = np.mean(mcs_results)
+                mcs_mean = np.mean(mcs_results)
+                ci_gap = 2 * np.std(mcs_results, ddof=1)
+                
+                ans_dict["Monte Carlo (Mean)"] = f"{mcs_mean:.4f}"
+                ans_dict["Monte Carlo (95% CI)"] = f"[{mcs_mean - ci_gap:.4f}, {mcs_mean + ci_gap:.4f}]"
             else:
                 ans_dict["Monte Carlo (Mean)"] = "N/A"
+                ans_dict["Monte Carlo (95% CI)"] = "N/A"
 
             # 3. CRR & BBS Preparation
             dt = T_std / n_std 
@@ -272,7 +277,7 @@ with tab2:
                         bonus1[i] = max(hold, exe)
                     else:
                         bonus1[i] = hold
-            ans_dict["CRR (1D Tree)"] = bonus1[0]
+            ans_dict["CRR (1D Tree)"] = f"{bonus1[0]:.4f}"
 
             # BBS
             bbs_stock = np.zeros((n_std + 1, n_std + 1))
@@ -296,10 +301,10 @@ with tab2:
                         bbs_opt[j, k_step] = max(disc_exp, payoff_func(bbs_stock[j, k_step], K_std, option_type_std))
                     else:
                         bbs_opt[j, k_step] = disc_exp
-            ans_dict["BBS (Tree)"] = bbs_opt[0, 0]
+            ans_dict["BBS (Tree)"] = f"{bbs_opt[0, 0]:.4f}"
 
             st.write("### 定價結果比較表")
-            df_res = pd.DataFrame.from_dict(ans_dict, orient='index', columns=['Estimated Price'])
+            df_res = pd.DataFrame.from_dict(ans_dict, orient='index', columns=['Estimated Value'])
             st.table(df_res)
 
 # ==========================================
@@ -409,46 +414,47 @@ with tab4:
             st.write(f"**Tree Method Price:** {tree_price:.6f}")
             st.write(f"**MCS Mean ({reps_lb} reps):** {np.mean(mcs_prices):.6f}")
 
-
 # ==========================================
-# Tab 5：Rainbow Options (動態拉桿版)
+# Tab 5：Rainbow Options (數字輸入版)
 # ==========================================
 with tab5:
     st.header("Rainbow Option Pricing (MCS, AV, MM)")
     
     col_top1, col_top2, col_top3 = st.columns(3)
     with col_top1:
-        n_assets = st.slider("Number of Assets (n)", 2, 5, 2, key="rb_n_assets")
+        # 改為純數字輸入框，提供更大的輸入彈性
+        n_assets = st.number_input("Number of Assets (n)", min_value=2, max_value=10, value=2, step=1, key="rb_n_assets")
     with col_top2:
-        K_rb = st.slider("Strike Price (K)", min_value=10.0, max_value=300.0, value=100.0, step=1.0, key="rb_k")
-        T_rb = st.slider("T (Years)",        min_value=0.1,  max_value=5.0,   value=1.0,   step=0.1, key="rb_T")
+        K_rb = st.number_input("Strike Price (K)", min_value=1.0, value=100.0, step=1.0, key="rb_k")
+        T_rb = st.number_input("T (Years)",        min_value=0.01, value=1.0, step=0.1, key="rb_T")
     with col_top3:
-        r_rb     = st.slider("r – Risk-free (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.25, key="rb_r") / 100
-        sims_rb  = st.slider("MCS Simulations",   min_value=1000,max_value=50000,value=10000, step=1000, key="rb_sims")
-        reps_rb  = st.slider("MCS Repetitions",   min_value=1,   max_value=50,   value=10,  step=1, key="rb_reps")
+        r_rb     = st.number_input("r – Risk-free (%)", min_value=0.0, value=5.0, step=0.1, key="rb_r") / 100
+        sims_rb  = st.number_input("MCS Simulations",   min_value=100, value=10000, step=1000, key="rb_sims")
+        reps_rb  = st.number_input("MCS Repetitions",   min_value=1,   value=10,  step=1, key="rb_reps")
 
     st.subheader("個別資產參數 (S₀, q, σ)")
-    cols_assets = st.columns(n_assets)
+    
+    # 建立彈性的 Columns 數量，避免過多資產時版面擠壓
+    cols_assets = st.columns(min(n_assets, 5)) 
     s0_list, q_list, sigma_list = [], [], []
     
-    # 動態生成資產輸入框
     for i in range(n_assets):
-        with cols_assets[i]:
+        with cols_assets[i % 5]:
             st.markdown(f"**Asset {i+1}**")
-            s0_list.append(st.slider(f"S0_{i+1}", min_value=10.0, max_value=300.0, value=100.0, step=1.0, key=f"rb_s0_{i}"))
-            q_list.append(st.slider(f"q_{i+1} (%)", min_value=0.0, max_value=10.0, value=0.0, step=0.25, key=f"rb_q_{i}") / 100)
-            sigma_list.append(st.slider(f"σ_{i+1} (%)", min_value=1.0, max_value=100.0, value=20.0, step=1.0, key=f"rb_sig_{i}") / 100)
+            s0_list.append(st.number_input(f"S0_{i+1}", min_value=1.0, value=100.0, step=1.0, key=f"rb_s0_{i}"))
+            q_list.append(st.number_input(f"q_{i+1} (%)", min_value=0.0, value=0.0, step=0.1, key=f"rb_q_{i}") / 100)
+            sigma_list.append(st.number_input(f"σ_{i+1} (%)", min_value=0.1, value=20.0, step=1.0, key=f"rb_sig_{i}") / 100)
 
     st.subheader("相關係數矩陣 (Correlation)")
     corr_matrix = np.eye(n_assets)
     idx = 0
-    corr_cols = st.columns(3)
+    corr_cols = st.columns(min(3, n_assets * (n_assets - 1) // 2))
     
-    # 動態生成相關係數拉桿
+    # 動態生成相關係數 "輸入框" (number_input)
     for i in range(n_assets):
         for j in range(i+1, n_assets):
             with corr_cols[idx % 3]:
-                val = st.slider(f"Corr (Asset {i+1} & {j+1})", -1.0, 1.0, 0.5, step=0.05, key=f"corr_{i}_{j}")
+                val = st.number_input(f"Corr (Asset {i+1} & {j+1})", min_value=-1.0, max_value=1.0, value=0.5, step=0.05, key=f"corr_{i}_{j}")
                 corr_matrix[i, j] = val
                 corr_matrix[j, i] = val
                 idx += 1
@@ -480,14 +486,14 @@ with tab5:
                 payoffs = np.maximum(max_prices - K_rb, 0)
                 return np.mean(np.exp(-r_rb * T_rb) * payoffs)
 
-            for _ in range(reps_rb):
+            for _ in range(int(reps_rb)):
                 # 1. Basic MCS
-                Z = np.random.standard_normal((sims_rb, n_assets))
+                Z = np.random.standard_normal((int(sims_rb), n_assets))
                 G = Z.dot(A.T)
                 
                 # 2. AV + MM
                 Z_bonus = Z.copy()
-                Z_bonus[sims_rb//2:] = -Z_bonus[:sims_rb//2]
+                Z_bonus[int(sims_rb)//2:] = -Z_bonus[:int(sims_rb)//2]
                 Z_bonus = (Z_bonus - Z_bonus.mean(axis=0)) / Z_bonus.std(axis=0)
                 G_bonus = Z_bonus.dot(A.T)
 
@@ -507,5 +513,14 @@ with tab5:
                 "Std Error": [np.std(res_basic, ddof=1), np.std(res_bonus, ddof=1), np.std(res_new, ddof=1)]
             })
             
+            # 加入 95% CI 輸出供 Rainbow 參考
+            df_res["95% CI Lower"] = df_res["Mean Price"] - 2 * df_res["Std Error"]
+            df_res["95% CI Upper"] = df_res["Mean Price"] + 2 * df_res["Std Error"]
+
             st.write("### Rainbow Option Results")
-            st.dataframe(df_res.style.format({"Mean Price": "{:.4f}", "Std Error": "{:.6f}"}), use_container_width=True)
+            st.dataframe(df_res.style.format({
+                "Mean Price": "{:.4f}", 
+                "Std Error": "{:.6f}",
+                "95% CI Lower": "{:.4f}",
+                "95% CI Upper": "{:.4f}"
+            }), use_container_width=True)
