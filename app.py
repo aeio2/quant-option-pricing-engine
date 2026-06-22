@@ -150,11 +150,11 @@ st.title("📈 Quantitative Finance Pricing Engine")
 st.markdown("---")
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "🔢 FDM",
-    "📊 Standard Options",
-    "🏗️ Structured Payoff",
-    "🔭 Lookback",
-    "🌈 Rainbow"
+    " Finte differencee model ",
+    " standard options pricing ",
+    " combination of n(assets numbers) vanilla options ",
+    " Lookback option pricing ",
+    " Rainbow option pricing"
 ])
 
 # ==========================================
@@ -415,7 +415,7 @@ with tab4:
             st.write(f"**MCS Mean ({reps_lb} reps):** {np.mean(mcs_prices):.6f}")
 
 # ==========================================
-# Tab 5：Rainbow Options (數字輸入版)
+# Tab 5：Rainbow Options 
 # ==========================================
 with tab5:
     st.header("Rainbow Option Pricing (MCS, AV, MM)")
