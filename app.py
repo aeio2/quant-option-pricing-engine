@@ -8,11 +8,10 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-# 設定網頁基本資訊
 st.set_page_config(page_title="Quantitative Finance Pricing Engine", layout="wide")
 
 # ==========================================
-# 共用函數區 (BSM, Payoff 等)
+# 共用數學與定價函數
 # ==========================================
 def black_scholes_call_price(S0, K, T, r, q, sigma):
     if T <= 0: return max(S0 - K, 0)
@@ -32,7 +31,7 @@ def black_scholes_price(S0, K, T, r, q, sigma, option_type):
     else:
         return black_scholes_put_price(S0, K, T, r, q, sigma)
 
-def payoff(S, K, option_type):
+def payoff_func(S, K, option_type):
     if option_type == 'CALL':
         return np.maximum(S - K, 0)
     else:
@@ -43,352 +42,346 @@ def floor_decimal(number, decimals=2):
     return math.floor(number * factor) / factor
 
 # ==========================================
-# 模組 1：FDM (Finite Difference Method) 的函數
+# 模組 1：FDM 
 # ==========================================
 def implicit_FDM(S0, K, r, q, sigma, T, Smin, Smax, m, n, is_American=False, Callput='Call'):
     dt = T / n
-    dS = (Smax - Smin) / m 
+    dS = (Smax - Smin) / m
     grid = np.zeros((m+1, n+1))
 
     if Callput == 'Call':
         for k in range(n+1):
-            grid[0, k] = (Smax - K) 
+            grid[0, k] = (Smax - K)
             grid[m, k] = 0
         for _ in range(m+1):
-            grid[_,-1] = max(0 , Smin + (m - _ ) * dS - K)
-    else: 
+            grid[_,-1] = max(0, Smin + (m - _) * dS - K)
+    else:
         for k in range(n+1):
             grid[0, k] = 0
-            grid[m , k] = K 
+            grid[m, k] = K
         for _ in range(m+1):
-            grid[_,-1] = max(0 , K - (Smin + (m - _ ) * dS))
+            grid[_,-1] = max(0, K - (Smin + (m - _) * dS))
 
     def coefficients(j):
-        aj = - 0.5 * sigma**2 * j**2 * dt - 0.5 * (r - q) * j * dt
+        aj = -0.5 * sigma**2 * j**2 * dt - 0.5 * (r - q) * j * dt
         bj = 1 + sigma**2 * j**2 * dt + r * dt
-        cj = - 0.5 * sigma**2 * j**2 * dt + 0.5 * (r - q) * j * dt
-        return cj , bj , aj 
-    
-    A = np.zeros((m-1,m-1))
+        cj = -0.5 * sigma**2 * j**2 * dt + 0.5 * (r - q) * j * dt
+        return cj, bj, aj
+
+    A = np.zeros((m-1, m-1))
     if m > 1:
-        A[0,0]  = coefficients(m-1)[1]
-        if m > 2: A[0,1]  = coefficients(m-1)[0]
-        for j in range(1,m-2): 
+        A[0, 0] = coefficients(m-1)[1]
+        if m > 2: A[0, 1] = coefficients(m-1)[0]
+        for j in range(1, m-2):
             node = m - j - 1
-            c , b , a = coefficients(node)
+            c, b, a = coefficients(node)
             A[j, j-1] = a
             A[j, j] = b
             A[j, j+1] = c
         if m > 2:
             A[-1, -1] = coefficients(1)[1]
             A[-1, -2] = coefficients(1)[2]
-        
+
         A_inv = np.linalg.inv(A)
-        for i in range (n-1 ,-1, -1):
+        for i in range(n-1, -1, -1):
             B = np.zeros(m-1)
-            for j in range(1 , m):
-                B[j-1] = grid[ j , i+1]
-            B[0]    -= coefficients(m-1)[2] * grid[0, i]   
-            B[m-2]  -= coefficients(1)[0]   * grid[m, i]   
-            x = A_inv @ B    
-            for j in range(1 , m):
-                grid[j,i] = x[j-1] 
+            for j in range(1, m):
+                B[j-1] = grid[j, i+1]
+            B[0]   -= coefficients(m-1)[2] * grid[0, i]
+            B[m-2] -= coefficients(1)[0]   * grid[m, i]
+            x = A_inv @ B
+            for j in range(1, m):
+                grid[j, i] = x[j-1]
                 if is_American:
                     current_S = Smin + (m - j) * dS
-                    if Callput == 'Call':
-                        grid[j,i] = max(grid[j,i], current_S - K)
-                    else:
-                        grid[j,i] = max(grid[j,i], K - current_S)
+                    grid[j, i] = max(grid[j, i], current_S - K if Callput == 'Call' else K - current_S)
 
     j0 = (S0 - Smin) / dS
     row0 = m - j0
     row_low  = int(np.floor(row0))
     row_high = min(row_low + 1, m)
     w = row0 - row_low
-
     return (1-w) * grid[row_low, 0] + w * grid[row_high, 0]
 
 def explicit_FDM(S0, K, r, q, sigma, T, Smin, Smax, m, n, is_American=False, Callput='Call'):
     dt = T / n
-    dS = (Smax - Smin) / m 
+    dS = (Smax - Smin) / m
     grid = np.zeros((m+1, n+1))
 
     if Callput == 'Call':
         for k in range(n+1):
-            grid[0, k] = (Smax - K) 
+            grid[0, k] = (Smax - K)
             grid[m, k] = 0
         for _ in range(m+1):
-            grid[_,-1] = max(0 , Smin + (m - _ ) * dS - K)
+            grid[_,-1] = max(0, Smin + (m - _) * dS - K)
     else:
         for k in range(n+1):
             grid[0, k] = 0
-            grid[m , k] = K 
+            grid[m, k] = K
         for _ in range(m+1):
-            grid[_,-1] = max(0 , K - (Smin + (m - _ ) * dS))
+            grid[_,-1] = max(0, K - (Smin + (m - _) * dS))
 
     def coefficients(j):
         aj = 0.5 * sigma**2 * j**2 * dt + 0.5 * (r - q) * j * dt
         bj = 1 - sigma**2 * j**2 * dt - r * dt
         cj = 0.5 * sigma**2 * j**2 * dt - 0.5 * (r - q) * j * dt
-        return cj , bj , aj 
-    
-    for i in range (n-1 ,-1, -1):
-        for j in range(1 , m):
+        return cj, bj, aj
+
+    for i in range(n-1, -1, -1):
+        for j in range(1, m):
             node = m - j
-            c , b , a = coefficients(node)
+            c, b, a = coefficients(node)
             grid[j, i] = a * grid[j-1, i+1] + b * grid[j, i+1] + c * grid[j+1, i+1]
-            
             if is_American:
                 current_S = Smin + (m - j) * dS
-                if Callput == 'Call':
-                    grid[j,i] = max(grid[j,i], current_S - K)
-                else:
-                    grid[j,i] = max(grid[j,i], K - current_S)
+                grid[j, i] = max(grid[j, i], current_S - K if Callput == 'Call' else K - current_S)
 
     j0 = (S0 - Smin) / dS
     row0 = m - j0
     row_low  = int(np.floor(row0))
     row_high = min(row_low + 1, m)
     w = row0 - row_low
-
     return (1-w) * grid[row_low, 0] + w * grid[row_high, 0]
 
+# ==========================================
+# 介面渲染
+# ==========================================
+st.title("📈 Quantitative Finance Pricing Engine")
+st.markdown("---")
 
-# ==========================================
-# 側邊欄導航 (Sidebar Navigation)
-# ==========================================
-st.sidebar.title("Option Pricing Engine")
-page = st.sidebar.selectbox("Choose a Model:", [
-    "1. Finite Difference Method (FDM)",
-    "2. Standard Options (CRR, BBS, MCS)",
-    "3. Structured Payoff Option",
-    "4. Lookback Options",
-    "5. Rainbow Options"
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🔢 FDM",
+    "📊 Standard Options",
+    "🏗️ Structured Payoff",
+    "🔭 Lookback",
+    "🌈 Rainbow"
 ])
 
 # ==========================================
-# 頁面 1：Finite Difference Method
+# Tab 1：Finite Difference Method
 # ==========================================
-if page == "1. Finite Difference Method (FDM)":
+with tab1:
     st.header("Finite Difference Method (Implicit & Explicit)")
-    
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        s0 = st.number_input("S0", value=50)
-        k = st.number_input("K", value=50)
-        T = st.number_input("T (years)", value=0.5)
+        st.subheader("Asset & Strike")
+        s0  = st.slider("S₀ (Spot Price)",     min_value=10.0,  max_value=200.0, value=50.0,  step=1.0)
+        k   = st.slider("K (Strike Price)",     min_value=10.0,  max_value=200.0, value=50.0,  step=1.0)
+        T   = st.slider("T (Years to Expiry)",  min_value=0.1,   max_value=5.0,   value=0.5,   step=0.1)
     with col2:
-        r = st.number_input("r (%)", value=10.0) / 100
-        q = st.number_input("q (%)", value=5.0) / 100
-        sigma = st.number_input("sigma (%)", value=40.0) / 100
+        st.subheader("Rates & Volatility")
+        r     = st.slider("r – Risk-free Rate (%)",  min_value=0.0,  max_value=20.0, value=10.0, step=0.5) / 100
+        q     = st.slider("q – Dividend Yield (%)",  min_value=0.0,  max_value=10.0, value=5.0,  step=0.5) / 100
+        sigma = st.slider("σ – Volatility (%)",      min_value=1.0,  max_value=100.0,value=40.0, step=1.0) / 100
     with col3:
-        smin = st.number_input("Smin", value=0.0)
-        smax = st.number_input("Smax", value=100.0)
-        m = st.number_input("m (Price steps)", value=100, step=10)
-        n = st.number_input("n (Time steps)", value=100, step=10)
+        st.subheader("Grid Parameters")
+        smin = st.slider("Smin",              min_value=0.0,   max_value=50.0,  value=0.0,   step=5.0)
+        smax = st.slider("Smax",              min_value=50.0,  max_value=500.0, value=100.0, step=10.0)
+        m    = st.slider("m – Price Steps",   min_value=20,    max_value=300,   value=100,   step=10)
+        n    = st.slider("n – Time Steps",    min_value=20,    max_value=300,   value=100,   step=10)
 
-    if st.button("Calculate FDM Prices"):
-        with st.spinner('Calculating...'):
-            df = pd.DataFrame(columns=["implicit" , "explicit"] , index= ["EC" , "EP" , "AC" , "AP"])
-            
-            df.loc["EC", "implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False, "Call"), 4)
-            df.loc["EP", "implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False, "Put"), 4)
-            df.loc["AC", "implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Call"), 4)
-            df.loc["AP", "implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Put"), 4)
+    if st.button("Calculate FDM Prices", key="fdm_calc"):
+        with st.spinner("Calculating..."):
+            df = pd.DataFrame(columns=["Implicit", "Explicit"],
+                              index=["European Call", "European Put", "American Call", "American Put"])
 
-            df.loc["EC", "explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False, "Call"), 4)
-            df.loc["EP", "explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False, "Put"), 4)
-            df.loc["AC", "explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Call"), 4)
-            df.loc["AP", "explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Put"), 4)
+            df.loc["European Call", "Implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False,"Call"), 4)
+            df.loc["European Put",  "Implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False,"Put"),  4)
+            df.loc["American Call", "Implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Call"), 4)
+            df.loc["American Put",  "Implicit"] = round(implicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Put"),  4)
 
-            st.dataframe(df, use_container_width=True)
+            df.loc["European Call", "Explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False,"Call"), 4)
+            df.loc["European Put",  "Explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,False,"Put"),  4)
+            df.loc["American Call", "Explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Call"), 4)
+            df.loc["American Put",  "Explicit"] = floor_decimal(explicit_FDM(s0,k,r,q,sigma,T,smin,smax,m,n,True, "Put"),  4)
+
+        st.dataframe(df.style.format("{:.4f}"), use_container_width=True)
 
 # ==========================================
-# 頁面 2：Standard Options (CRR, BBS, MCS)
+# Tab 2：Standard Options (BSM, CRR, BBS, MC)
 # ==========================================
-elif page == "2. Standard Options (CRR, BBS, MCS)":
+with tab2:
     st.header("Standard Option Pricing")
-    
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        s0 = st.number_input("S0", value=100.0)
-        K = st.number_input("Strike Price (K)", value=100.0)
-        T = st.number_input("T (years)", value=1.0)
+        st.subheader("Asset & Strike")
+        s0_std = st.slider("S₀ (Spot Price)",    min_value=10.0,  max_value=500.0, value=100.0, step=1.0,  key="std_s0")
+        K_std  = st.slider("K (Strike Price)",    min_value=10.0,  max_value=500.0, value=100.0, step=1.0,  key="std_k")
+        T_std     = st.slider("T (Years)",           min_value=0.1,  max_value=10.0,  value=1.0,  step=0.1, key="std_T")
     with col2:
-        r = st.number_input("r (%)", value=5.0) / 100
-        q = st.number_input("q (%)", value=0.0) / 100
-        sigma = st.number_input("sigma (%)", value=20.0) / 100
+        st.subheader("Rates & Volatility")
+        r_std  = st.slider("r – Risk-free (%)",   min_value=0.0,   max_value=20.0,  value=5.0,   step=0.25, key="std_r") / 100
+        q_std  = st.slider("q – Dividend (%)",    min_value=0.0,   max_value=10.0,  value=0.0,   step=0.25, key="std_q") / 100
+        sigma_std = st.slider("σ – Volatility (%)", min_value=1.0,  max_value=100.0, value=20.0, step=1.0, key="std_sigma") / 100
     with col3:
-        n = st.slider("Tree Steps (n)", 10, 500, 100)
-        sim_times = st.slider("MCS 模擬次數", 1000, 50000, 10000, step=1000)
-        reps = st.slider("MCS 重複次數", 1, 50, 20)
+        st.subheader("Model Parameters")
+        n_std     = st.slider("Tree Steps (n)",      min_value=10,   max_value=500,   value=100,  step=10,  key="std_n")
+        sim_times = st.slider("MCS Simulations",     min_value=1000, max_value=50000, value=10000, step=1000, key="std_sim")
+        reps      = st.slider("MCS Repetitions",     min_value=1,    max_value=50,    value=20,   step=1, key="std_rep")
 
-    col4, col5 = st.columns(2)
-    with col4:
-        option_type = st.radio("Option Type", ["CALL", "PUT"])
-    with col5:
-        option_style = st.radio("Option Style", ["European", "American"])
+    col_opt1, col_opt2 = st.columns(2)
+    with col_opt1:
+        option_type_std = st.radio("Option Type", ["CALL", "PUT"], horizontal=True, key="std_type")
+    with col_opt2:
+        option_style = st.radio("Option Style", ["European", "American"], horizontal=True, key="std_style")
+    
+    is_euro = (option_style == "European")
 
-    style_code = 'E' if option_style == "European" else 'A'
-
-    if st.button("Calculate Prices"):
-        with st.spinner('Calculating...'):
+    if st.button("Calculate Prices", key="std_calc"):
+        with st.spinner("Calculating BSM, CRR, BBS, and Monte Carlo..."):
             ans_dict = {}
 
-            # 1. BSM (European Only)
-            if style_code == 'E':
-                ans_dict["BSM"] = black_scholes_price(s0, K, T, r, q, sigma, option_type)
+            # 1. BSM (Euro Only)
+            if is_euro:
+                ans_dict["BSM (Analytic)"] = black_scholes_price(s0_std, K_std, T_std, r_std, q_std, sigma_std, option_type_std)
             else:
-                ans_dict["BSM"] = "N/A (European Only)"
+                ans_dict["BSM (Analytic)"] = "N/A (European Only)"
 
-            # 2. Monte Carlo (European Only for standard MCS)
-            if style_code == 'E':
+            # 2. Monte Carlo (Euro Only)
+            if is_euro:
                 mcs_results = []
                 for _ in range(reps):
-                    drift = (r - q - 0.5 * (sigma**2)) * T
-                    diffusion = sigma * np.sqrt(T) * np.random.normal(size=sim_times)
-                    S_T_arr = s0 * np.exp(drift + diffusion)
-                    payoffs = payoff(S_T_arr, K, option_type)
-                    mcs_results.append(np.mean(np.exp(-r * T) * payoffs))
+                    drift = (r_std - q_std - 0.5 * (sigma_std**2)) * T_std
+                    diffusion = sigma_std * np.sqrt(T_std) * np.random.normal(size=sim_times)
+                    S_T_arr = s0_std * np.exp(drift + diffusion)
+                    payoffs = payoff_func(S_T_arr, K_std, option_type_std)
+                    mcs_results.append(np.mean(np.exp(-r_std * T_std) * payoffs))
                 
-                ans_dict["MCS (Mean)"] = np.mean(mcs_results)
-                ci_gap = 2 * np.std(mcs_results, ddof=1)
-                ans_dict["MCS 95% CI"] = f"[{np.mean(mcs_results)-ci_gap:.4f}, {np.mean(mcs_results)+ci_gap:.4f}]"
+                ans_dict["Monte Carlo (Mean)"] = np.mean(mcs_results)
             else:
-                ans_dict["MCS (Mean)"] = "N/A"
-                ans_dict["MCS 95% CI"] = "N/A"
+                ans_dict["Monte Carlo (Mean)"] = "N/A"
 
-            # Tree parameters
-            delta_t = T / n 
-            u = np.exp(sigma * np.sqrt(delta_t))
-            d = np.exp(-1 * sigma * np.sqrt(delta_t)) 
-            p = (np.exp((r - q ) * delta_t) - d ) / (u - d) 
+            # 3. CRR & BBS Preparation
+            dt = T_std / n_std 
+            u = np.exp(sigma_std * np.sqrt(dt))
+            d = np.exp(-1 * sigma_std * np.sqrt(dt)) 
+            p = (np.exp((r_std - q_std) * dt) - d ) / (u - d) 
 
-            # 3. CRR (1D Array - Bonus 1)
-            bonus1 = np.zeros(n+1) 
-            for j in range(n+1): 
-                bonus1[j] = payoff(s0 * (u ** (n-j)) * (d ** j), K, option_type) 
+            # CRR 1D
+            bonus1 = np.zeros(n_std+1) 
+            for j in range(n_std+1): 
+                bonus1[j] = payoff_func(s0_std * (u ** (n_std-j)) * (d ** j), K_std, option_type_std) 
             
-            for k_step in range(n , 0, -1):
+            for k_step in range(n_std , 0, -1):
                 for i in range(k_step):
-                    hold = np.exp(-r * delta_t) * (p * bonus1[i] + (1-p) * bonus1[i+1])
-                    if style_code == 'A':
-                        exe = payoff(s0 * (u ** (k_step-1-i)) * (d ** i), K, option_type)
+                    hold = np.exp(-r_std * dt) * (p * bonus1[i] + (1-p) * bonus1[i+1])
+                    if not is_euro:
+                        exe = payoff_func(s0_std * (u ** (k_step-1-i)) * (d ** i), K_std, option_type_std)
                         bonus1[i] = max(hold, exe)
                     else:
                         bonus1[i] = hold
-            ans_dict["CRR (1D)"] = bonus1[0]
+            ans_dict["CRR (1D Tree)"] = bonus1[0]
 
-            # 4. BBS (Bonus 2)
-            bbs_stock = np.zeros((n + 1, n + 1))
-            bbs_opt = np.zeros((n + 1, n + 1))
-            for k_step in range(n + 1):
+            # BBS
+            bbs_stock = np.zeros((n_std + 1, n_std + 1))
+            bbs_opt = np.zeros((n_std + 1, n_std + 1))
+            for k_step in range(n_std + 1):
                 for j in range(k_step + 1):
-                    bbs_stock[j, k_step] = s0 * (u ** (k_step - j)) * (d ** j)
+                    bbs_stock[j, k_step] = s0_std * (u ** (k_step - j)) * (d ** j)
 
-            for j in range(n):
-                s_node = bbs_stock[j, n-1]
-                bs_val = black_scholes_price(s_node, K, delta_t, r, q, sigma, option_type)
-                if style_code == 'A': 
-                    bbs_opt[j, n-1] = max(bs_val, payoff(s_node, K, option_type))
+            for j in range(n_std):
+                s_node = bbs_stock[j, n_std-1]
+                bs_val = black_scholes_price(s_node, K_std, dt, r_std, q_std, sigma_std, option_type_std)
+                if not is_euro: 
+                    bbs_opt[j, n_std-1] = max(bs_val, payoff_func(s_node, K_std, option_type_std))
                 else: 
-                    bbs_opt[j, n-1] = bs_val
+                    bbs_opt[j, n_std-1] = bs_val
 
-            for k_step in range(n - 2, -1, -1):
+            for k_step in range(n_std - 2, -1, -1):
                 for j in range(k_step + 1):
-                    discounted_exp = np.exp(-r * delta_t) * (p * bbs_opt[j, k_step+1] + (1 - p) * bbs_opt[j+1, k_step+1])
-                    if style_code == 'A':
-                        bbs_opt[j, k_step] = max(discounted_exp, payoff(bbs_stock[j, k_step], K, option_type))
+                    disc_exp = np.exp(-r_std * dt) * (p * bbs_opt[j, k_step+1] + (1 - p) * bbs_opt[j+1, k_step+1])
+                    if not is_euro:
+                        bbs_opt[j, k_step] = max(disc_exp, payoff_func(bbs_stock[j, k_step], K_std, option_type_std))
                     else:
-                        bbs_opt[j, k_step] = discounted_exp
-            ans_dict["BBS"] = bbs_opt[0, 0]
+                        bbs_opt[j, k_step] = disc_exp
+            ans_dict["BBS (Tree)"] = bbs_opt[0, 0]
 
-            st.write("### Pricing Results")
-            st.table(pd.DataFrame.from_dict(ans_dict, orient='index', columns=['Price']))
-
+            st.write("### 定價結果比較表")
+            df_res = pd.DataFrame.from_dict(ans_dict, orient='index', columns=['Estimated Price'])
+            st.table(df_res)
 
 # ==========================================
-# 頁面 3：Structured Payoff Option
+# Tab 3：Structured Payoff Option
 # ==========================================
-elif page == "3. Structured Payoff Option":
-    st.header("Structured Payoff Option (K1, K2, K3, K4)")
-    st.markdown("The option payoff is structured across four strikes. Can be decomposed into standard long/short vanilla positions.")
-    
+with tab3:
+    st.header("Structured Payoff Option")
+    st.markdown("Payoff structured across four strikes — statically replicated via long/short vanilla calls.")
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        s0 = st.number_input("S0", value=100.0)
-        T = st.number_input("T (years)", value=1.0)
+        st.subheader("Asset & Time")
+        s0_sp = st.slider("S₀ (Spot Price)", min_value=10.0,  max_value=300.0, value=100.0, step=1.0,  key="sp_s0")
+        T_sp  = st.slider("T (Years)",        min_value=0.1,   max_value=5.0,   value=1.0,   step=0.1,  key="sp_T")
     with col2:
-        r = st.number_input("r (%)", value=5.0) / 100
-        q = st.number_input("q (%)", value=0.0) / 100
-        sigma = st.number_input("sigma (%)", value=20.0) / 100
+        st.subheader("Rates & Vol")
+        r_sp     = st.slider("r – Risk-free (%)",  min_value=0.0,  max_value=20.0,  value=5.0,  step=0.25, key="sp_r")     / 100
+        q_sp     = st.slider("q – Dividend (%)",   min_value=0.0,  max_value=10.0,  value=0.0,  step=0.25, key="sp_q")     / 100
+        sigma_sp = st.slider("σ – Volatility (%)", min_value=1.0,  max_value=100.0, value=20.0, step=1.0,  key="sp_sigma") / 100
     with col3:
-        K1 = st.number_input("K1", value=80.0)
-        K2 = st.number_input("K2", value=90.0)
-        K3 = st.number_input("K3", value=110.0)
-        K4 = st.number_input("K4", value=120.0)
-        
-    if st.button("Calculate Structured Price"):
+        st.subheader("Four Strikes")
+        K1 = st.slider("K1", min_value=10.0,  max_value=200.0, value=80.0,  step=1.0, key="sp_K1")
+        K2 = st.slider("K2", min_value=10.0,  max_value=200.0, value=90.0,  step=1.0, key="sp_K2")
+        K3 = st.slider("K3", min_value=10.0,  max_value=200.0, value=110.0, step=1.0, key="sp_K3")
+        K4 = st.slider("K4", min_value=10.0,  max_value=200.0, value=120.0, step=1.0, key="sp_K4")
+
+    if st.button("Calculate Structured Price", key="sp_calc"):
         if not (K1 < K2 < K3 < K4):
             st.error("Please ensure K1 < K2 < K3 < K4")
         else:
-            price_1 = black_scholes_price(s0, K1, T, r, q, sigma, "CALL")
-            price_2 = black_scholes_price(s0, K2, T, r, q, sigma, "CALL")
-            price_3 = black_scholes_price(s0, K3, T, r, q, sigma, "CALL")
-            price_4 = black_scholes_price(s0, K4, T, r, q, sigma, "CALL")
-            
+            p1 = black_scholes_price(s0_sp, K1, T_sp, r_sp, q_sp, sigma_sp, "CALL")
+            p2 = black_scholes_price(s0_sp, K2, T_sp, r_sp, q_sp, sigma_sp, "CALL")
+            p3 = black_scholes_price(s0_sp, K3, T_sp, r_sp, q_sp, sigma_sp, "CALL")
+            p4 = black_scholes_price(s0_sp, K4, T_sp, r_sp, q_sp, sigma_sp, "CALL")
             weight = (K2 - K1) / (K4 - K3)
-            sum_vanilla = price_1 - price_2 - (weight * price_3) + (weight * price_4)
-            
-            st.success(f"Analytical Price (Static Replication): {sum_vanilla:.6f}")
-
+            result = p1 - p2 - weight * p3 + weight * p4
+            st.success(f"**Analytical Price (Static Replication): {result:.6f}**")
 
 # ==========================================
-# 頁面 4：Lookback Options
+# Tab 4：Lookback 
 # ==========================================
-elif page == "4. Lookback Options":
-    st.header("Lookback Option Pricing")
+with tab4:
+    st.header("Lookback Options")
     
     col1, col2, col3 = st.columns(3)
     with col1:
-        st_val = st.number_input("St (Current Price)", value=50.0)
-        smax_t = st.number_input("S_max_t (Historical Max)", value=50.0)
-        T_minus_t = st.number_input("T - t (Remaining Time)", value=0.25)
+        st_val    = st.slider("St (Current Price)", min_value=10.0, max_value=200.0, value=50.0, step=1.0, key="lb_st")
+        smax_t    = st.slider("S_max_t (Hist Max)", min_value=10.0, max_value=200.0, value=50.0, step=1.0, key="lb_smax")
+        T_minus_t = st.slider("T - t (Remaining)",  min_value=0.1,  max_value=5.0,   value=0.25, step=0.05, key="lb_t")
     with col2:
-        r = st.number_input("r (%)", value=10.0) / 100
-        q = st.number_input("q (%)", value=0.0) / 100
-        sigma = st.number_input("sigma (%)", value=40.0) / 100
+        r_lb      = st.slider("r (%)", min_value=0.0, max_value=20.0, value=10.0, step=0.5, key="lb_r") / 100
+        q_lb      = st.slider("q (%)", min_value=0.0, max_value=10.0, value=0.0,  step=0.5, key="lb_q") / 100
+        sigma_lb  = st.slider("σ (%)", min_value=1.0, max_value=100.0,value=40.0, step=1.0, key="lb_sig") / 100
     with col3:
-        n = st.slider("Tree Steps (n)", 5, 100, 10)
-        sims = st.slider("MCS Simulations", 1000, 20000, 10000)
-        reps = st.slider("MCS Repetitions", 1, 50, 20)
+        n_lb      = st.slider("Tree Steps (n)",  min_value=5,    max_value=100,   value=10,    step=5,    key="lb_n")
+        sims_lb   = st.slider("MCS Simulations", min_value=1000, max_value=20000, value=10000, step=1000, key="lb_sim")
+        reps_lb   = st.slider("MCS Repetitions", min_value=1,    max_value=50,    value=20,    step=1,    key="lb_rep")
 
-    is_american = st.checkbox("American Style?", value=False)
+    is_american_lb = st.checkbox("American Style?", value=False, key="lb_am")
 
-    if st.button("Calculate Lookback Price"):
-        with st.spinner('Calculating...'):
+    if st.button("Calculate Lookback Price", key="lb_calc"):
+        with st.spinner('Calculating (Fast 1D Array + MCS)...'):
             
-            # 1. Tree Method (Bonus 2 logic - Fast 1D Array Backward Induction)
-            dt = T_minus_t / n
-            u = np.exp(sigma * np.sqrt(dt))
+            # Tree Method
+            dt = T_minus_t / n_lb
+            u = np.exp(sigma_lb * np.sqrt(dt))
             d = 1.0 / u
-            mu = np.exp((r - q) * dt)  
-            r_disc = np.exp(r * dt)      
+            mu = np.exp((r_lb - q_lb) * dt)  
+            r_disc = np.exp(r_lb * dt)      
             q_prob = (mu * u - 1.0) / (mu * (u - d))
             
-            # Using max to avoid log domain errors if st_val > smax_t somehow
             k0 = int(round(np.log(max(smax_t / st_val, 1.0)) / np.log(u)))
-            max_k = n + k0
+            max_k = n_lb + k0
             V = np.array([u**k - 1.0 for k in range(max_k + 1)])
             
-            for j in range(n - 1, -1, -1):
+            for j in range(n_lb - 1, -1, -1):
                 V_new = np.zeros(j + k0 + 1)
                 for k in range(j + k0 + 1):
                     k_up = max(k - 1, 0)
                     k_down = k + 1
                     hold = (q_prob * V[k_up] + (1 - q_prob) * V[k_down]) * mu / r_disc
-                    
-                    if is_american:
+                    if is_american_lb:
                         V_new[k] = max(hold, u**k - 1.0)
                     else:
                         V_new[k] = hold
@@ -396,83 +389,78 @@ elif page == "4. Lookback Options":
                 
             tree_price = st_val * V[k0]
 
-            # 2. MCS Method
+            # MCS Method
             mcs_prices = []
-            drift = (r - q - 0.5 * sigma**2) * dt
-            vol = sigma * np.sqrt(dt)
+            drift = (r_lb - q_lb - 0.5 * sigma_lb**2) * dt
+            vol = sigma_lb * np.sqrt(dt)
 
-            for _ in range(reps):
-                S_path = np.zeros((sims, n + 1))
+            for _ in range(reps_lb):
+                S_path = np.zeros((sims_lb, n_lb + 1))
                 S_path[:, 0] = st_val
                 
-                Z = np.random.normal(size=(sims, n))
-                for i in range(1, n + 1):
+                Z = np.random.normal(size=(sims_lb, n_lb))
+                for i in range(1, n_lb + 1):
                     S_path[:, i] = S_path[:, i-1] * np.exp(drift + vol * Z[:, i-1])
                 
                 max_S = np.maximum(smax_t, np.max(S_path, axis=1))
                 payoffs = np.maximum(max_S - S_path[:, -1], 0)
-                mcs_prices.append(np.mean(np.exp(-r * T_minus_t) * payoffs))
+                mcs_prices.append(np.mean(np.exp(-r_lb * T_minus_t) * payoffs))
 
-            st.write("### Results")
-            st.write(f"**Tree Method (Bonus 2 API):** {tree_price:.6f}")
-            
-            ci_gap = 2 * np.std(mcs_prices, ddof=1)
-            st.write(f"**MCS Mean ({reps} reps):** {np.mean(mcs_prices):.6f}")
-            st.write(f"**MCS 95% CI:** [{np.mean(mcs_prices) - ci_gap:.6f}, {np.mean(mcs_prices) + ci_gap:.6f}]")
+            st.write(f"**Tree Method Price:** {tree_price:.6f}")
+            st.write(f"**MCS Mean ({reps_lb} reps):** {np.mean(mcs_prices):.6f}")
 
 
 # ==========================================
-# 頁面 5：Rainbow Options
+# Tab 5：Rainbow Options (動態拉桿版)
 # ==========================================
-elif page == "5. Rainbow Options":
+with tab5:
     st.header("Rainbow Option Pricing (MCS, AV, MM)")
     
     col_top1, col_top2, col_top3 = st.columns(3)
     with col_top1:
-        n = st.slider("Number of Assets (n)", 2, 5, 2)
+        n_assets = st.slider("Number of Assets (n)", 2, 5, 2, key="rb_n_assets")
     with col_top2:
-        K = st.number_input("Strike Price (K)", value=100.0)
-        T = st.number_input("T (years)", value=1.0)
+        K_rb = st.slider("Strike Price (K)", min_value=10.0, max_value=300.0, value=100.0, step=1.0, key="rb_k")
+        T_rb = st.slider("T (Years)",        min_value=0.1,  max_value=5.0,   value=1.0,   step=0.1, key="rb_T")
     with col_top3:
-        r = st.number_input("r (%)", value=5.0) / 100
-        sims = st.slider("MCS Simulations", 1000, 50000, 10000, step=1000)
-        reps = st.slider("MCS Repetitions", 1, 50, 10)
+        r_rb     = st.slider("r – Risk-free (%)", min_value=0.0, max_value=20.0, value=5.0, step=0.25, key="rb_r") / 100
+        sims_rb  = st.slider("MCS Simulations",   min_value=1000,max_value=50000,value=10000, step=1000, key="rb_sims")
+        reps_rb  = st.slider("MCS Repetitions",   min_value=1,   max_value=50,   value=10,  step=1, key="rb_reps")
 
-    st.subheader("Asset Parameters")
-    cols = st.columns(n)
+    st.subheader("個別資產參數 (S₀, q, σ)")
+    cols_assets = st.columns(n_assets)
     s0_list, q_list, sigma_list = [], [], []
     
-    for i in range(n):
-        with cols[i]:
+    # 動態生成資產輸入框
+    for i in range(n_assets):
+        with cols_assets[i]:
             st.markdown(f"**Asset {i+1}**")
-            s0_list.append(st.number_input(f"S0_{i+1}", value=100.0, key=f"s{i}"))
-            q_list.append(st.number_input(f"q_{i+1} (%)", value=0.0, key=f"q{i}") / 100)
-            sigma_list.append(st.number_input(f"sigma_{i+1} (%)", value=20.0, key=f"sig{i}") / 100)
+            s0_list.append(st.slider(f"S0_{i+1}", min_value=10.0, max_value=300.0, value=100.0, step=1.0, key=f"rb_s0_{i}"))
+            q_list.append(st.slider(f"q_{i+1} (%)", min_value=0.0, max_value=10.0, value=0.0, step=0.25, key=f"rb_q_{i}") / 100)
+            sigma_list.append(st.slider(f"σ_{i+1} (%)", min_value=1.0, max_value=100.0, value=20.0, step=1.0, key=f"rb_sig_{i}") / 100)
 
-    st.subheader("Correlation Matrix")
-    corr_matrix = np.eye(n)
+    st.subheader("相關係數矩陣 (Correlation)")
+    corr_matrix = np.eye(n_assets)
     idx = 0
     corr_cols = st.columns(3)
     
-    # Dynamically generate sliders for every pair of assets
-    for i in range(n):
-        for j in range(i+1, n):
+    # 動態生成相關係數拉桿
+    for i in range(n_assets):
+        for j in range(i+1, n_assets):
             with corr_cols[idx % 3]:
-                val = st.slider(f"Corr: Asset {i+1} & {j+1}", -1.0, 1.0, 0.5, key=f"corr_{i}_{j}")
+                val = st.slider(f"Corr (Asset {i+1} & {j+1})", -1.0, 1.0, 0.5, step=0.05, key=f"corr_{i}_{j}")
                 corr_matrix[i, j] = val
                 corr_matrix[j, i] = val
                 idx += 1
 
-    if st.button("Calculate Rainbow Options"):
-        with st.spinner("Simulating..."):
+    if st.button("Calculate Rainbow Options", key="rb_calc"):
+        with st.spinner("Simulating Cholesky Decomposition & MCS..."):
             
-            # Construct Covariance Matrix
-            cov_matrix = np.zeros((n, n))
-            for i in range(n):
-                for j in range(n):
-                    cov_matrix[i, j] = sigma_list[i] * sigma_list[j] * corr_matrix[i, j] * T
+            cov_matrix = np.zeros((n_assets, n_assets))
+            for i in range(n_assets):
+                for j in range(n_assets):
+                    cov_matrix[i, j] = sigma_list[i] * sigma_list[j] * corr_matrix[i, j] * T_rb
 
-            # Cholesky Decomposition
             try:
                 A = np.linalg.cholesky(cov_matrix)
             except np.linalg.LinAlgError:
@@ -482,29 +470,28 @@ elif page == "5. Rainbow Options":
             s0_arr = np.array(s0_list)
             q_arr = np.array(q_list)
             sig_arr = np.array(sigma_list)
-            drift = (r - q_arr - 0.5 * sig_arr**2) * T
+            drift = (r_rb - q_arr - 0.5 * sig_arr**2) * T_rb
 
             res_basic, res_bonus, res_new = [], [], []
 
-            # Shared Payoff evaluation logic
             def calc_rainbow_price(G_paths):
                 St = s0_arr * np.exp(drift + G_paths)
                 max_prices = St.max(axis=1)
-                payoffs = np.maximum(max_prices - K, 0)
-                return np.mean(np.exp(-r * T) * payoffs)
+                payoffs = np.maximum(max_prices - K_rb, 0)
+                return np.mean(np.exp(-r_rb * T_rb) * payoffs)
 
-            for _ in range(reps):
+            for _ in range(reps_rb):
                 # 1. Basic MCS
-                Z = np.random.standard_normal((sims, n))
+                Z = np.random.standard_normal((sims_rb, n_assets))
                 G = Z.dot(A.T)
                 
-                # 2. AV + MM (Bonus 1)
+                # 2. AV + MM
                 Z_bonus = Z.copy()
-                Z_bonus[sims//2:] = -Z_bonus[:sims//2] # Antithetic Variates
-                Z_bonus = (Z_bonus - Z_bonus.mean(axis=0)) / Z_bonus.std(axis=0) # Moment Matching
+                Z_bonus[sims_rb//2:] = -Z_bonus[:sims_rb//2]
+                Z_bonus = (Z_bonus - Z_bonus.mean(axis=0)) / Z_bonus.std(axis=0)
                 G_bonus = Z_bonus.dot(A.T)
 
-                # 3. New Method (Inverse Cholesky - Bonus 2)
+                # 3. Inverse Cholesky
                 cov_star = np.cov(Z_bonus, rowvar=False)
                 B = np.linalg.cholesky(cov_star)
                 B_inv = np.linalg.inv(B)
@@ -514,21 +501,11 @@ elif page == "5. Rainbow Options":
                 res_bonus.append(calc_rainbow_price(G_bonus))
                 res_new.append(calc_rainbow_price(G_new))
 
-            st.success("Simulation Complete!")
-            
             df_res = pd.DataFrame({
-                "Method": ["Basic MCS", "Bonus 1 (AV+MM)", "Bonus 2 (Inv Chol)"],
+                "Method": ["Basic MCS", "AV + MM", "Inverse Chol"],
                 "Mean Price": [np.mean(res_basic), np.mean(res_bonus), np.mean(res_new)],
                 "Std Error": [np.std(res_basic, ddof=1), np.std(res_bonus, ddof=1), np.std(res_new, ddof=1)]
             })
-            df_res["95% CI Lower"] = df_res["Mean Price"] - 2 * df_res["Std Error"]
-            df_res["95% CI Upper"] = df_res["Mean Price"] + 2 * df_res["Std Error"]
-            df_res["CI Range"] = df_res["95% CI Upper"] - df_res["95% CI Lower"]
             
-            st.dataframe(df_res.style.format({
-                "Mean Price": "{:.4f}", 
-                "Std Error": "{:.6f}", 
-                "95% CI Lower": "{:.4f}", 
-                "95% CI Upper": "{:.4f}", 
-                "CI Range": "{:.4f}"
-            }), use_container_width=True)
+            st.write("### Rainbow Option Results")
+            st.dataframe(df_res.style.format({"Mean Price": "{:.4f}", "Std Error": "{:.6f}"}), use_container_width=True)
