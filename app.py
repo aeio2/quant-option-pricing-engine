@@ -9,7 +9,7 @@ import math
 st.set_page_config(page_title="Quantitative Finance Pricing Engine", layout="wide")
 
 # ==========================================
-# 模組 1：FDM (Finite Difference Method)
+# FDM (Finite Difference Method)
 # ==========================================
 def implicit_FDM(S0, K, r, q, sigma, T, Smin, Smax, m, n, is_American=False, Callput='Call'):
     dt = T / n
@@ -124,7 +124,7 @@ def floor_decimal(number, decimals=2):
     return math.floor(number * factor) / factor
 
 # ==========================================
-# 模組 2：標準選擇權 (CRR, BBS, BSM)
+# (CRR, BBS, BSM)
 # ==========================================
 def black_scholes_price(S0, K, T, r, q, sigma, option_type):
     d1 = (np.log(S0/K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
